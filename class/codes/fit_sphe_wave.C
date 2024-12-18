@@ -3,7 +3,7 @@
 // Filename: fit_sphe_wave.C
 // Created: 2021
 // ________________________________________ //
-#include "/home/henrique/Documents/SoLAr/WVFAnaSoLAr/class/MYCODES.h"
+#include "WVFAnaSoLAr.h"
 
 
 void fit_sphe_wave1(Int_t ch = 0){

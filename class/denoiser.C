@@ -3,7 +3,7 @@
 // Filename: denoiser.C
 // Created: 2024
 // ________________________________________ //
-#include "MYCODES.h"
+#include "WVFAnaSoLAr.h"
 class DENOISE{
 
   public:

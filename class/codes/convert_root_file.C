@@ -4,7 +4,7 @@
 // Created: 2024
 // ________________________________________ //
 #include <filesystem>  // C++17
-#include "/home/henrique/Documents/SoLAr/WVFAnaSoLAr/class/MYCODES.h"
+#include "WVFAnaSoLAr.h"
 
 
 void convert_root_file(string datadir = "./"){

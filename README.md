@@ -30,19 +30,19 @@ It will give you the instructions (**with the correct path**) as following:
 
 ``` example
 # insert this line to .bashrc
-# alias myclass="source ~/{YOUR_PATH}/load_my_class.sh"
+# alias anasol="source ~/{YOUR_PATH}/load_my_class.sh"
 # to use the sample (analyzer) class, go to any folder which have "analyzed.root" file and run:
-# myclass
+# anasol
 # If you want to execute a specific file instead, you can run
-# myclass {path_to_file}/your_file.root 
+# anasol {path_to_file}/your_file.root 
 # If you want to change old data, you need to give the number of points per waveform as following:
-# myclass {file.root} {# of pts}
+# anasol {file.root} {# of pts}
 # If you want just to load the class without any data, you can run
-# myclass no
+# anasol no
 ```
 
 
-If everything works you can run `myclass` and it will load it.
+If everything works you can run `anasol` and it will load it.
 
 To check a few methods, you can run:
 ``` root

@@ -32,8 +32,6 @@ class IntegrationScan{
       dark.rootfile = rootfile;
 
 
-
-
       Double_t start = start_first_stop_step[0];
       Double_t first = start_first_stop_step[1];
       Double_t step = start_first_stop_step[3];

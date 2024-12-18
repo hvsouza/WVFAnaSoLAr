@@ -3,7 +3,7 @@
 // Filename: readingCodes.C
 // Created: 2024
 // ________________________________________ //
-#include "MYCODES.h"
+#include "WVFAnaSoLAr.h"
 #include <arpa/inet.h>
 
 
@@ -23,11 +23,11 @@ class Read{
     string fmapname;
     UInt_t m_totalevents = 0;
   public:
-  
-  
 
-    Int_t n_points; 
-  
+
+
+    Int_t n_points;
+
     Double_t dtime = 16; // steps (ADC's MS/s, 500 MS/s = 2 ns steps)
     Int_t nbits = 14;
     Int_t basebits = nbits;
@@ -39,12 +39,13 @@ class Read{
     Double_t slow = 17000;
     Double_t filter = 9;
     Double_t exclusion_baseline = 30;
+    map<UInt_t, Double_t> map_exclusion_threshold_baselines = {{0,0}};
     Double_t exclusion_window = 500;
     Double_t currentTime = 0;
 
     Bool_t OnlySomeEvents = false; // Do you want only one event? Choose it wisely
     Int_t stopEvent = 2000;
-    
+
     Double_t baselineTime = 10000; // time limit to start looking for baseline
     Double_t baselineStart = 0;
     Double_t chargeTime = 18000; // last time to integrate
@@ -82,9 +83,9 @@ class Read{
       fmapname += "/channelmaps/solars_channel_map.csv";
       ifstream fmap;
       fmap.open(fmapname.c_str(), ifstream::in);
-      UInt_t board; 
-      UInt_t ch; 
-      UInt_t fch; 
+      UInt_t board;
+      UInt_t ch;
+      UInt_t fch;
       while(!fmap.fail()){
         fmap >> board;
         if(fmap.bad() || fmap.fail()){
@@ -200,7 +201,6 @@ class Read{
 
           if (fill_channels){
             channels.push_back(fBoardF);
-            exclusion_baselines.push_back(0);
           }
       }
       for (const uint &chnumber: channels ){
@@ -219,9 +219,10 @@ class Read{
           fout << fboard << " " << elem.first[1] << " " << fch << "\n";
         }
       }
+      setup_baseline_thresholds();
 
     }
-  
+
     void convert_from_root(Bool_t load_ch_map_from_root=true, bool update_map=false){
       max_bits = TMath::Power(2,nbits);
       if (maxRange < startCharge) maxRange = startCharge + startCharge;
@@ -229,10 +230,10 @@ class Read{
       readFiles(standard_log_file); //use it like this
       return;
     }
-  
-  
+
+
     void readFiles(string files){
-    
+
       ifstream filesdata;
       filesdata.open(files.c_str(),ios::in);
       string rootfile;
@@ -244,7 +245,7 @@ class Read{
       vector<ADC_DATA*> ch(channels.size());
       vector<TBranch*> bch(channels.size());
 
-    
+
       Bool_t first_file = true;
 
       if(filesdata.good() && filesdata.is_open()){ // Ok
@@ -261,15 +262,15 @@ class Read{
         if(filesdata.bad() || filesdata.fail()){
           break;
         }
-      
+
         // ______________________________ Create root files at first files only __________________________________
         if(first_file){
           first_file = false;
           rootfile = "analyzed.root";
-        
+
           // string erase = "rm " + rootfile;
           // system(erase.c_str());
-        
+
           f1 = new TFile(rootfile.c_str(),"RECREATE");
           t1 = new TTree("t1","ADC processed waveform");
           t1->SetEntries(m_totalevents);
@@ -294,32 +295,32 @@ class Read{
           thead->Fill();
 
           f1->Write();
-        
+
           f1->Close();
         }
         // _______________________________________________________________________________________________________
 
         readData(temp,rootfile,tEvent);
-      
+
       }
-    
+
     }
-  
 
 
 
 
-  
+
+
     // This function will read your data and create a root file with the same name
     void readData(string ifile,string rootfile, Double_t &tEvent){
-    
+
       TFile *f1 = new TFile(rootfile.c_str(),"UPDATE");
       TTree *t1 = (TTree*)f1->Get("t1");
-    
+
       map<uint, ADC_DATA*> ch;
       map<uint, TBranch*> bcho;
-    
-    
+
+
       for (const uint &i: channels ){
         bcho[i] = t1->GetBranch(Form("Ch%d.",i));
         bcho[i]->SetAddress(&ch[i]);
@@ -343,15 +344,15 @@ class Read{
       // btaim_ns->SetAddress(&m_taim_ns);
       // btslppsm_ns->SetAddress(&m_tslppsm_ns);
       bth1s_ptr->SetAddress(&m_h);
-      
+
       auto nentries = trwf->GetEntries();
-      
+
       for (auto i = 0; i < nentries; i++){
         bevent->GetEntry(i);
         bsn->GetEntry(i);
         bch->GetEntry(i);
         if(i%200==0){
-          // cout << i << " out of " << nentries << "\r" << flush;
+          cout << i << " out of " << nentries << "\r" << flush;
         }
         vector<uint> board_ch = {m_sn, m_ch};
         if (channels_to_get_map.count(board_ch)>0)
@@ -366,14 +367,14 @@ class Read{
 
       }
       cout << "\n";
-    
+
       f1->WriteObject(t1,"t1","TObject::kOverwrite");
-    
+
       f1->Close();
-  
+
     }
-  
-  
+
+
 
     void getvalues(uint nch, ADC_DATA &ch, TH1S *htmp){
       Int_t n_points = htmp->GetNbinsX();
@@ -385,9 +386,10 @@ class Read{
         filtered[i] = ch.wvf[i];
       }
       if(filter>0) dn.TV1D_denoise<Double_t>(&ch.wvf[0],&filtered[0],n_points,filter);
-      Double_t bl = baseline(&filtered[0],ch.selection);
+      Double_t bl = baseline(&filtered[0],ch.selection, map_exclusion_threshold_baselines[nch]);
 
-      ch.peak =0;
+      ch.peak = 0;
+      ch.base = bl;
       Double_t fastcomp = 0;
       Double_t slowcomp = 0;
       ch.charge=0;
@@ -412,9 +414,9 @@ class Read{
 //     cout << fastcomp << " " << slowcomp << endl;
       ch.fprompt = fastcomp/slowcomp;
     }
-  
-  
-    Double_t baseline(Double_t v[], UInt_t &selection){
+
+
+    Double_t baseline(Double_t v[], UInt_t &selection, Double_t exclusion_threshold){
       if(noBaseline) return 0;
       Double_t result = 0;
       hbase->Reset();
@@ -422,14 +424,14 @@ class Read{
       Double_t res0 = hbase->GetBinCenter(hbase->GetMaximumBin());
       Double_t hmean = hbase->GetMean();
       Double_t hstd = hbase->GetStdDev();
-    
+
 
       Bool_t changed_mean = false;
-    
-    
+
+
       Double_t bins=0;
       for(Int_t i=baselineStart/dtime; i<baselineTime/dtime;){
-        if(v[i] > res0 + exclusion_baseline || v[i]<res0 - exclusion_baseline) {
+        if(v[i] > res0 + exclusion_threshold || v[i]<res0 - exclusion_threshold) {
           i+=exclusion_window/dtime;
         }
         else{
@@ -449,58 +451,30 @@ class Read{
         return res0;
       }
     }
+
+    void setup_baseline_thresholds(){
+      Int_t nchannels = (int)channels.size();
+      auto mapIter = map_exclusion_threshold_baselines.find(0);
+
+      if (mapIter != map_exclusion_threshold_baselines.end()){ // in case the map was not set
+        map_exclusion_threshold_baselines.erase(0);
+        for (const uint &chnumber: channels ){
+          map_exclusion_threshold_baselines[chnumber] = exclusion_baseline;
+        }
+      }
+      else{
+        for (const uint &chnumber: channels ){
+          if (map_exclusion_threshold_baselines.count(chnumber) == 0)
+          {
+            map_exclusion_threshold_baselines[chnumber] = exclusion_baseline;
+          }
+          exclusion_baselines.push_back(map_exclusion_threshold_baselines[chnumber]);
+        }
+
+      }
+    }
+
+
 };
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 

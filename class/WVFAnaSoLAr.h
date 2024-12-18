@@ -1,6 +1,6 @@
 // ________________________________________ //
 // Author: Henrique Souza
-// Filename: MYCODES.h
+// Filename: WVFAnaSoLAr.h
 // Created: 2021
 // ________________________________________ //
 

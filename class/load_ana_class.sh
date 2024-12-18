@@ -1,12 +1,12 @@
 #!/usr/bin/env sh
 # ________________________________________ #
 # Author: Henrique Souza
-# Filename: samples.C
-# Created: 2021
+# Filename: load_ana_class.sh
+# Created: 2024
 # ________________________________________ #
 #
 # insert this line to .bashrc
-# alias myclass="source __USER_PATH__/load_my_class.sh"
+# alias myclass="source /home/henrique/Documents/SoLAr/WVFAnaSoLAr/class/load_ana_class.sh"
 # to use the sample (analyzer) class, go to any folder which have "analyzed.root" file and run:
 # myclass
 # If you want to execute a specific file instead, you can run
@@ -17,6 +17,9 @@
 # myclass no
 #
 # Using `-c` flag will compile the code, which will run much faster
+# Add this to your ~/.rootlogon.C:
+# gInterpreter->AddIncludePath("/home/henrique/Documents/SoLAr/WVFAnaSoLAr/class");
+# So scripts are automatically loaded
 
 #!/bin/bash
 
@@ -51,6 +54,7 @@ done
 # Assign the remaining positional parameters
 if [[ $# -ge 1 ]]; then
     echo "Not sure what you want... "
+    return 1
 fi
 
 
@@ -119,7 +123,9 @@ process_file || return 1
 
 
 if [ $file == 'no' ]; then
-    eval 'root -e ".L __USER_PATH__/MYCODES.h$compile_flag"'
+    eval 'root -e ".L /home/henrique/Documents/SoLAr/WVFAnaSoLAr/class/WVFAnaSoLAr.h$compile_flag"'
 else
-    eval 'root -e ".L __USER_PATH__/MYCODES.h$compile_flag" -e "ANALYZER s(\"s\")" -e "s.setAnalyzer(\"$file\")"'
+    eval 'root -e ".L /home/henrique/Documents/SoLAr/WVFAnaSoLAr/class/WVFAnaSoLAr.h$compile_flag" -e "ANALYZER s(\"s\")" -e "s.setAnalyzer(\"$file\")"'
 fi
+
+
