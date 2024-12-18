@@ -8,12 +8,12 @@
 
 
 void convert_root_file(string datadir = "./"){
-
+    
     Read r;
-
+        
     r.dtime = 16; // step time in ns
     r.nbits = 14; // this is used only for baseline histogram, changing it to 12 might help
-
+    
     r.baselineTime = 16000; // time limit for baseline in ns
     r.startCharge = 2368;  // start integration time in ns
     r.chargeTime = 2600; // last time to integrate ns
@@ -21,6 +21,10 @@ void convert_root_file(string datadir = "./"){
     r.fast = 200; // fprompt fast integration time
     r.slow = 1700; //fprompt slow integration time
     r.exclusion_baseline = 500; // filtered waveform (ADCs), anything above here will do +exclusion window while evaluating the baseline
+    r.map_exclusion_threshold_baselines = {
+        {44, 120},
+        {144, 100}
+    };
     // r.exclusion_baselines = {35,15};
     r.exclusion_window = 1000; // time in ns that it will jump for baseline
     r.filter = 100; // denoise filter.. if filter = 0, no denoise is done.
@@ -33,22 +37,29 @@ void convert_root_file(string datadir = "./"){
     r.channels = {44, 144};
     // r.channels = {};
     const char *logfilename = r.standard_log_file.c_str();
-
-    system(Form("touch %s && rm %s", logfilename, logfilename));
+      
     std::filesystem::path filePath = datadir;
-    if (filePath.extension() == ".root") // Heed the dot.
-    {
-        string packdata = Form("echo %s > %s", datadir.c_str(), logfilename);
-        system(packdata.c_str());
-    }
+    if (filePath.extension() == ".log") // Passing log of files I want..
+        r.standard_log_file = filePath.filename();
     else
     {
-        cout << "HERE..." << endl;
-        string packdata = Form("/bin/ls -1 %s/*.root | grep -v analyzed.root > %s", datadir.c_str(), logfilename);
-        system(packdata.c_str());
+        system(Form("touch %s && rm %s", logfilename, logfilename));
+        if (filePath.extension() == ".root") // Heed the dot.
+        {
+            string packdata = Form("echo %s > %s", datadir.c_str(), logfilename);
+            system(packdata.c_str());
+        }
+        else
+        {
+            string packdata = Form("/bin/ls -1 %s/*.root | grep -v analyzed.root > %s", datadir.c_str(), logfilename);
+            system(packdata.c_str());
+        }
     }
     r.convert_from_root();
+    
+    
+    // r.adc_read_all_data();
 
-
+    
 }
 
