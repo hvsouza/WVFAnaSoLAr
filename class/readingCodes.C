@@ -29,7 +29,7 @@ class Read{
     Int_t n_points;
 
     Double_t dtime = 16; // steps (ADC's MS/s, 500 MS/s = 2 ns steps)
-    Int_t nbits = 14;
+    Int_t nbits = 16;
     Int_t basebits = nbits;
     Bool_t saveFilter       = false;
 
@@ -44,7 +44,8 @@ class Read{
     Double_t currentTime = 0;
 
     Bool_t OnlySomeEvents = false; // Do you want only one event? Choose it wisely
-    Int_t stopEvent = 2000;
+    UInt_t stopEvent = 2000;
+    bool stopEventPerRootFile = true;
 
     Double_t baselineTime = 10000; // time limit to start looking for baseline
     Double_t baselineStart = 0;
@@ -60,6 +61,7 @@ class Read{
     string standard_log_file = "fileslog.log";
 
     Double_t polarity=-1; // set -1 invert to negative pulses
+    Double_t offset = 0;
     vector<UInt_t> channels = {};
     vector<double> exclusion_baselines = {};
 
@@ -71,10 +73,10 @@ class Read{
     std::map<vector<uint>, uint> channels_to_get_map; // map of channels to pick, gotta go fast
     std::map<uint, uint> boardorder_map; // map board serial in order...
 
+    Int_t nrootfiles = 0;
+
 
     DENOISE dn;
-
-
 
     std::map<std::vector<uint>, uint> load_channel_map(){
       std::map<vector<uint>, uint> tmpchmap;
@@ -119,13 +121,18 @@ class Read{
         return;
       }
       string dataname;
+      nrootfiles = 0;
       while(!logfile.fail()){
         logfile >> dataname;
         if(logfile.bad() || logfile.fail()){
           break;
         }
         TFile *ftmp = new TFile(dataname.c_str(), "READ");
+        if (ftmp->IsZombie())
+          continue;
+        std::map<vector<uint>, uint> chmap_from_root; 
         TTree *ttmp = (TTree*)ftmp->Get("rwf");
+        nrootfiles+=1;
         TBranch *bevent = ttmp->GetBranch("event");
         TBranch *bsn = ttmp->GetBranch("sn");
         TBranch *bch = ttmp->GetBranch("ch");
@@ -140,40 +147,41 @@ class Read{
           bch->GetEntry(i);
 
           vector<uint> board_ch = {m_sn, m_ch};
-          if (load_ch_map_from_root)
-          {
-            if (chmap[board_ch] == 1){
+            if (chmap_from_root[board_ch] == 1){
               // All scanned...
               break;
             }
-            chmap[board_ch] += 1;
+          chmap_from_root[board_ch] += 1;
+          if (load_ch_map_from_root)
+          {
             boardorder_map[m_sn] = 1;
+            chmap[board_ch] = 1;
           }
 
         }
 
         ftmp->Close();
         delete ftmp;
-        auto nchannels = chmap.size();
+        auto nchannels = chmap_from_root.size();
         if (nentries%nchannels != 0){
           throw std::invalid_argument("WTF!");
         }
         auto events_per_channel = nentries/nchannels;
         m_totalevents += events_per_channel;
       }
-      int aux = 0;
-      for(const auto& boards : boardorder_map)
-      {
-        boardorder_map[boards.first] = aux;
-        aux+=1;
-      }
-
       logfile.close();
 
       if (!load_ch_map_from_root){
         return;
       }
       else{
+        int aux = 0;
+        for(const auto& boards : boardorder_map)
+        {
+          boardorder_map[boards.first] = aux;
+          aux+=1;
+        }
+
         for(const auto& elem : chmap)
         {
           // std::cout << elem.first[0] << " " << elem.first[1] << " " << elem.second << std::endl;
@@ -236,7 +244,7 @@ class Read{
 
       ifstream filesdata;
       filesdata.open(files.c_str(),ios::in);
-      string rootfile;
+      string rootfile = "analyzed.root";
       TFile *f1;
       TTree *t1;
       TTree *thead;
@@ -265,15 +273,21 @@ class Read{
 
         // ______________________________ Create root files at first files only __________________________________
         if(first_file){
+
+          // Check if file is ok... 
+          TFile *ftmp = new TFile(temp.c_str(), "READ");
+          if (ftmp->IsZombie())
+            continue;
           first_file = false;
-          rootfile = "analyzed.root";
-
-          // string erase = "rm " + rootfile;
-          // system(erase.c_str());
-
           f1 = new TFile(rootfile.c_str(),"RECREATE");
           t1 = new TTree("t1","ADC processed waveform");
-          t1->SetEntries(m_totalevents);
+          if (!OnlySomeEvents)
+            t1->SetEntries(m_totalevents);
+          else
+            if (stopEventPerRootFile)
+              t1->SetEntries(stopEvent*nrootfiles);
+            else
+              t1->SetEntries(stopEvent);
 
           for (const uint &chnumber: channels ){
             auto i = &chnumber - &channels[0];
@@ -300,7 +314,8 @@ class Read{
         }
         // _______________________________________________________________________________________________________
 
-        readData(temp,rootfile,tEvent);
+        if (!first_file)
+          readData(temp,rootfile,tEvent);
 
       }
 
@@ -313,6 +328,9 @@ class Read{
 
     // This function will read your data and create a root file with the same name
     void readData(string ifile,string rootfile, Double_t &tEvent){
+      TFile *fin = new TFile(ifile.c_str(), "READ");
+      if (fin->IsZombie())
+        return;
 
       TFile *f1 = new TFile(rootfile.c_str(),"UPDATE");
       TTree *t1 = (TTree*)f1->Get("t1");
@@ -325,9 +343,6 @@ class Read{
         bcho[i] = t1->GetBranch(Form("Ch%d.",i));
         bcho[i]->SetAddress(&ch[i]);
       }
-
-
-      TFile *fin = new TFile(ifile.c_str(), "READ");
       TTree *trwf = (TTree*)fin->Get("rwf");
       TBranch *bevent = trwf->GetBranch("event");
       TBranch *bsn = trwf->GetBranch("sn");
@@ -347,10 +362,28 @@ class Read{
 
       auto nentries = trwf->GetEntries();
 
+      UInt_t auxevent = 0;
       for (auto i = 0; i < nentries; i++){
         bevent->GetEntry(i);
         bsn->GetEntry(i);
         bch->GetEntry(i);
+        if (auxevent != m_event){
+          auxevent = m_event;
+          tEvent += 1;
+        }
+        if (OnlySomeEvents){
+          if (!stopEventPerRootFile)
+          {
+            if (tEvent > stopEvent)
+              break;
+          }
+          else
+          {
+            if (m_event > stopEvent)
+              break;
+          }
+        }
+
         if(i%200==0){
           cout << i << " out of " << nentries << "\r" << flush;
         }
@@ -359,7 +392,7 @@ class Read{
         {
           uint thechannel = chmap[board_ch];
           bth1s_ptr->GetEntry(i);
-          ch[thechannel]->event = m_event;
+          ch[thechannel]->event = tEvent;
           ch[thechannel]->board = m_sn;
           getvalues(thechannel, *ch[thechannel], m_h);
           bcho[thechannel]->Fill();
@@ -382,7 +415,8 @@ class Read{
       vector<Double_t> raw(n_points);
       vector<Double_t> filtered(n_points);
       for (Int_t i = 0; i < n_points; i++){
-        ch.wvf[i] = htmp->GetBinContent(i+1)*polarity;
+        // In this case, bin content is with i
+        ch.wvf[i] = (htmp->GetBinContent(i) - offset)*polarity;
         filtered[i] = ch.wvf[i];
       }
       if(filter>0) dn.TV1D_denoise<Double_t>(&ch.wvf[0],&filtered[0],n_points,filter);

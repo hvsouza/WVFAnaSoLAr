@@ -327,7 +327,7 @@ class WIENER{
         hwvf->SetBinContent(i+1,res[i]);
       }
 
-      shift_waveform(hwvf,y.maxBin);
+      shift_waveform(hwvf, h.maxBin, true);
       Double_t bl = 0;
       Double_t auxbaseline = 0;
       for(Int_t i=0; i<baseline/step; i++){

@@ -26,13 +26,15 @@ sed -i "s|__USER_PATH__|$class_dir|g" load_ana_class.sh
 if ! grep -Fq load_ana_class ~/.bashrc
 then
     echo "Please, add this to your .bashrc:"
-    echo "alias anasol=\"source $class_dir/load_ana_class.sh"
+    echo "alias anasol=\"source $class_dir/load_ana_class.sh\""
+    echo ""
 fi
 
 if ! grep -Fq $class_dir ~/.rootlogon.C
 then
-    echo "\nPlease, add this to your .rootlogon.C:"
+    echo "Please, add this to your .rootlogon.C:"
     echo "gInterpreter->AddIncludePath(\"$class_dir\");"
+    echo ""
 fi
 
 
