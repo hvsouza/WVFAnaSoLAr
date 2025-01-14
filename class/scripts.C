@@ -139,7 +139,6 @@ class WaveSelector{
         time[i] = i*zWS->dtime;
       }
       gsphe = new TGraph(zWS->n_points, &time[0], &avgspe[0]);
-      zWS->getWaveFromGraph(gsphe);
       zWS->baselineparameters.baselineStart      = 0;
       zWS->baselineparameters.baselineTime       = 2300;
       zWS->baselineparameters.exclusion_baseline = 20;
@@ -149,6 +148,7 @@ class WaveSelector{
       {
         zWS->persistence_plot(2000,-2000,30000,10,"use_mine");
         // zWS->getFFT();
+        zWS->getWaveFromGraph(gsphe);
         zWS->drawGraph("SAME");
       }
     }

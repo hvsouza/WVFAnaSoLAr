@@ -54,7 +54,14 @@ class WIENER{
         spec_re[k] = spec[k].Re();
         spec_im[k] = spec[k].Im();
       }
+    }
 
+    void scale(TH1* hscale){
+      for(Int_t k=0; k<npts/2+1; k++){
+        spec[k] *= hscale->GetBinContent(k+1);
+        spec_re[k] = spec[k].Re();
+        spec_im[k] = spec[k].Im();
+      }
     }
 
     // h is the s.p.e. response

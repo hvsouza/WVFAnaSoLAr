@@ -36,6 +36,7 @@ class ANALYZER{
     Int_t n_points;
     Bool_t invert = false;
     Bool_t put_my_offset_back = false;
+    Double_t default_scale = 1;
     vector<vector<Double_t>> raw;
     vector<vector<Double_t>> wvf;
     vector<TH1D*> haverage;
@@ -522,6 +523,8 @@ class ANALYZER{
       b[k]->GetEvent(myevent);
       n_points = ch[k]->npts;
       currentEvent = ch[k]->event;
+      if (default_scale!=1) scaleWvf(default_scale);
+
       if (!invert && !put_my_offset_back) return;
       else if (invert && put_my_offset_back) addOffsetWithScale(0,0,0,-1);
       else if (invert) scaleWvf(-1);

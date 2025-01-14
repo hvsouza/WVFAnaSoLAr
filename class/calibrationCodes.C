@@ -1093,7 +1093,6 @@ class Calibration
       cout << values_best_snr[3] << endl;
       cout << "values_best_fit:" << " ";
       cout << values_best_fit[0] << " ";
-      cout << values_best_fit[0] << " ";
       cout << values_best_fit[1] << " ";
       cout << values_best_fit[2] << " ";
       cout << values_best_fit[3] << endl;
