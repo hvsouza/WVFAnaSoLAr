@@ -1,3 +1,4 @@
+#include "WVFAnaSoLAr.h"
 
 class IntegrationScan{
   public:
@@ -52,7 +53,7 @@ class IntegrationScan{
         dark.fout->Close();
 
         cal.rootFile = dark.outrootname;
-        cal.nameplotpng = hresname + ".png";
+        cal.nameplotsave = hresname + ".png";
         cal.sphe_fit_try_hard(nullptr, ch, minrebin, maxbins, min_sigma, max_sigma, true);
         string tmp = Form("%.0f %.0f %.2f\n", start, finish, cal.snr);
         output += tmp;

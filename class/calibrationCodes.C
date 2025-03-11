@@ -118,6 +118,7 @@ class Calibration
   
     Double_t startpoint = 0.001;
     Double_t poisson_ratio = 3.;
+    Double_t lambda = 0;
     TF1 *faux = nullptr;
   
     Double_t xmin = -10000;
@@ -162,11 +163,18 @@ class Calibration
     Int_t lastOneAttempts = 2;
 
     bool save_plot = false;
-    string nameplotpng = "";
+    string nameplotsave = "";
     Double_t delta1; // dont change... automatic
     Double_t delta2;
 
-  
+    string forcetype = "n"; // [n]o force, force [f]it, force [s]nr
+    // Debug level:
+    // 0 none
+    // 1 first general fit
+    // 2 second general fit
+    // 3 first lastOne fit wiht fix parameters
+
+    Int_t debug_level = 0;
     // ____________________________________________________________________________________________________ //
     void fit_sphe_wave(string name, bool optimize = true){
 
@@ -272,7 +280,7 @@ class Calibration
 
       peak1 = fPositionY[1];
       mean1 = fPositionX[1];
-      sigma1 = 0.8*faux->GetParameter(2);
+      sigma1 = 2*faux->GetParameter(2);
 
       Int_t bin_second = 0; // corresponding bin of the second peak
       if (nfound-pos0 >= 3) // in case it was found
@@ -338,7 +346,7 @@ class Calibration
 
       Double_t lambda1 = -TMath::Log(prob_zeros);
       Double_t lambda2 = h->GetMean()/mean1;
-      Double_t lambda = lambda1;
+      lambda = lambda1;
 
       Double_t peak_by_formula1 = startpoint/(pow(poisson(lambda1,npois-1)/poisson(lambda1,npois),npois-2));
       Double_t peak_by_formula2 = startpoint/(pow(poisson(lambda2,npois-1)/poisson(lambda2,npois),npois-2));
@@ -350,7 +358,7 @@ class Calibration
 
       Double_t poisson2 = poisson(lambda,2);
       Double_t poisson3 = poisson(lambda,3);
-      Double_t poisson_ratio = poisson2/poisson3;
+      poisson_ratio = poisson2/poisson3;
 
 
       if(debug)
@@ -438,7 +446,7 @@ class Calibration
       hcharge->GetXaxis()->SetTitle("Normalized charge [A.U]");
 
     
-      TCanvas *c = new TCanvas("c", "c",1920,0,1920,1080);
+      TCanvas *c = new TCanvas("c", "c",1920,0,1920/2,1080/2);
 
       // c1->SetLogy();
       gPad->SetGrid(1,1);
@@ -474,12 +482,12 @@ class Calibration
       // TO BE CHECKED ! Maybe it is better to not control the startpoing so hardly
       Double_t temp_startpoint = startpoint;
       for(Int_t i = 0; i<n_peaks; i++){
+        temp_startpoint = poisson(lambda, (i+2))/poisson(lambda, 2)*startpoint;
         func->SetParameter((i+6+aux),temp_startpoint);
         aux++;
         func->SetParameter((i+6+aux),(i+1)*(mean1 - mean0) + mean1);
         aux++;
         func->SetParameter((i+6+aux),sqrt(i+2)*sigma1);
-        temp_startpoint = temp_startpoint/poisson_ratio;
       }
       func->SetParName(4,"#mu");
       func->SetParName(5,"#sigma");
@@ -504,13 +512,12 @@ class Calibration
       //hcharge->Scale(scale);
       hcharge->Draw("hist");
       // hcharge->Fit("func","R0Q");
+
       // Debug level:
       // 0 none
       // 1 first general fit
       // 2 second general fit
       // 3 first lastOne fit wiht fix parameters
-
-      Int_t debug_level = 0;
       if (debug_level == 1){
         func->Draw("SAME");
         return;
@@ -953,9 +960,9 @@ class Calibration
       pleg->Draw();
       // ____________________________ FinishDraw legend by hand ____________________________ //
 
-      if (nameplotpng == "") nameplotpng = histogram + ".png";
+      if (nameplotsave == "") nameplotsave = histogram + ".png";
       if (save_plot)
-          c->Print(nameplotpng.c_str());
+          c->Print(nameplotsave.c_str());
       if(quitemode)
       {
         delete c;
@@ -1104,7 +1111,10 @@ class Calibration
           string Userchoise;
           cout << "Not cool!!" << endl;
           cout << "You have to pick one: SNR [s], Fit[f] ";
-          cin >> Userchoise;
+          if (forcetype == "n")
+            cin >> Userchoise;
+          else
+            Userchoise = forcetype;
           if (Userchoise == "s")
           {
             cout << "Using best for SNR" << endl;

@@ -20,6 +20,7 @@ class WIENER{
     Double_t baseline = 0;
 
     TH1D *hfft = nullptr;
+    TH1D *hphase = nullptr;
     TH1D *hPSD = nullptr;
     TH1D *hwvf = nullptr;
     Double_t powerSpectrum = 0;
@@ -393,7 +394,9 @@ class WIENER{
     void idx_recompt(Int_t k){
         hfft->SetBinContent(k+1,spec[k].Rho()); // correction for plot
         hPSD->SetBinContent(k+1,spec[k].Rho2()/2.);
+        hphase->SetBinContent(k+1,spec[k].Theta()); // correction for plot
     }
+
     void recompute_hist(){
       for(Int_t k = 0; k<npts/2+1; k++){
         idx_recompt(k);
@@ -521,9 +524,11 @@ class WIENER{
       units_step = 1;
       units_freq = 1;
       delete hfft;
+      delete hphase;
       delete hPSD;
       delete hwvf;
       hfft = new TH1D(Form("fft_%s",obj_name.c_str()),Form("FFT %s",obj_name.c_str()),npts/2,0,frequency/2);
+      hphase = new TH1D(Form("phase_%s",obj_name.c_str()),Form("FFT  phase %s",obj_name.c_str()),npts/2,0,frequency/2);
       hPSD = new TH1D(Form("PSD_%s",obj_name.c_str()),Form("Power Spectral Density %s",obj_name.c_str()),npts/2,0,frequency/2);
       hwvf = new TH1D(Form("wvf_%s",obj_name.c_str()),Form("wvf_%s",obj_name.c_str()),npts,min,max);
 
@@ -551,6 +556,7 @@ class WIENER{
     void startup(){
 
       hfft = new TH1D(Form("fft_%s",obj_name.c_str()),Form("FFT %s",obj_name.c_str()),npts/2,0,frequency/2);
+      hphase = new TH1D(Form("phase_%s",obj_name.c_str()),Form("FFT phase %s",obj_name.c_str()),npts/2,0,frequency/2);
       hPSD = new TH1D(Form("PSD_%s",obj_name.c_str()),Form("Power Spectral Density %s",obj_name.c_str()),npts/2,0,frequency/2);
       hwvf = new TH1D(Form("wvf_%s",obj_name.c_str()),Form("wvf_%s",obj_name.c_str()),npts,0,npts*step);
 
@@ -592,14 +598,18 @@ class WIENER{
 
 
       hfft->GetXaxis()->SetTitle(Form("Frequency (%s)",unit_freq.c_str()));
+      hphase->GetXaxis()->SetTitle(Form("Frequency (%s)",unit_freq.c_str()));
       hPSD->GetXaxis()->SetTitle(Form("Frequency (%s)",unit_freq.c_str()));
+
       hfft->GetYaxis()->SetTitle("ADC");
       hPSD->GetYaxis()->SetTitle("PSD (ADC^{2} Hz^{-1})");
+      hphase->GetYaxis()->SetTitle("#theta");
 
       hwvf->GetXaxis()->SetTitle(Form("Time (%s)",unit_time.c_str()));
       hwvf->GetYaxis()->SetTitle("Amplitude (A.U.)");
       hPSD->SetLineWidth(2);
       hfft->SetLineWidth(2);
+      hphase->SetLineWidth(2);
     }
   
 

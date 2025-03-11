@@ -37,13 +37,18 @@ class ANALYZER{
     Bool_t invert = false;
     Bool_t put_my_offset_back = false;
     Double_t default_scale = 1;
+    Double_t default_offset = 0;
+    Double_t default_roll = 0;
+    
     vector<vector<Double_t>> raw;
     vector<vector<Double_t>> wvf;
     vector<TH1D*> haverage;
     vector<TH1D*> hfft;
     TH1D *h = nullptr;
+    TComplex *spec = nullptr;
     Double_t *time = nullptr;
     Double_t *tempraw = nullptr;
+    Double_t *auxvec = nullptr;
 
     string plot_opt = "AL";
     TGraph *gwvf;
@@ -107,6 +112,30 @@ class ANALYZER{
       filename = m_filename;
       if(f == nullptr) f = new TFile(filename.c_str(),"READ");
       if(t1 == nullptr) t1 = (TTree*)f->Get("t1");
+      configAnalyzer();
+    }
+
+    void setAnalyzer(TFile *fuser, string treename = "t1"){
+      if(fuser == nullptr) return;
+      f = fuser;
+      if(t1 == nullptr) t1 = (TTree*)f->Get(treename.c_str());
+      configAnalyzer();
+      cout << "Analyzer set" << endl;
+    }
+
+    void setAnalyzer(Int_t n_points, Int_t nchannels, Double_t dtime){
+      this->n_points = n_points;
+      this->nchannels = nchannels;
+      this->dtime = dtime;
+      ch.resize(nchannels);
+      for (Int_t i = 0; i < nchannels; i++) {
+        ch[i] = new ADC_DATA();
+        ch[i]->Set_npts(n_points);
+      }
+      setEmpty();
+    }
+
+    void configAnalyzer(){
       TList *lb = (TList*)t1->GetListOfBranches();
 
       if(lev==nullptr) lev = new TEventList(Form("lev_%s",myname.c_str()),Form("lev_%s",myname.c_str()));
@@ -117,7 +146,6 @@ class ANALYZER{
       schannel.resize(nchannels);
       channels.resize(nchannels);
       ch.resize(nchannels);
-
 
       if(thead == nullptr)
       {
@@ -195,6 +223,7 @@ class ANALYZER{
       }
       xmin = 0;
       xmax = n_points*dtime;
+      auxvec = new Double_t[n_points];
     }
 
     Int_t getIdx(){
@@ -240,6 +269,7 @@ class ANALYZER{
       w->fft(w->hwvf);
       if(inDecibel) w->convertDecibel();
       h = w->hfft;
+      spec = w->spec;
     }
 
     Double_t compute_true_baseline(Double_t baseline, Double_t offset){
@@ -491,7 +521,8 @@ class ANALYZER{
       }
     }
 
-    void getWaveFromHistogram(TH1D *htemp){
+    template<typename T>
+    void getWaveFromHistogram(T *htemp){
       if (htemp->GetNbinsX() != n_points){
         cout << "Not same amount of samples! Graph has " << htemp->GetNbinsX() << endl;
         return;
@@ -500,6 +531,7 @@ class ANALYZER{
         ch[kch]->wvf[i] = htemp->GetBinContent(i+1);
       }
     }
+
     void getWaveFromGraph(TGraph *gtemp){
       Double_t *xtemp = nullptr;
       Int_t ntemp = gtemp->GetN();
@@ -523,7 +555,9 @@ class ANALYZER{
       b[k]->GetEvent(myevent);
       n_points = ch[k]->npts;
       currentEvent = ch[k]->event;
+      if (default_offset!=0) addOffet(default_offset);
       if (default_scale!=1) scaleWvf(default_scale);
+      if (default_roll!=0) rollWvf(default_roll);
 
       if (!invert && !put_my_offset_back) return;
       else if (invert && put_my_offset_back) addOffsetWithScale(0,0,0,-1);
@@ -708,6 +742,38 @@ class ANALYZER{
         hfft[kch]->GetYaxis()->SetTitle("Magnitude (dB)");
       }
       h = hfft[kch];
+    }
+
+    void averageTComplex(Int_t maxevent = 0, Int_t startevent = 0, string selection = ""){
+      getSelection(selection);
+      Int_t nev = lev->GetN();
+      if (maxevent==0) {
+        maxevent = nev;
+      }
+      if (startevent+maxevent <= nev) {
+        nev = startevent+maxevent;
+      }
+      else{
+        cout << "Maximum number of events is " << nev << endl;
+        return;
+      }
+      Int_t iev = 0;
+      cout << "\n";
+      Int_t total = 0;
+      TComplex *avgspec = new TComplex[n_points];
+      for(Int_t i = startevent; i < nev; i++){
+        iev = lev->GetEntry(i);
+        printev(i,nev);
+        getWaveform(iev,kch);
+        getFFT();
+        for (Int_t j = 0; j < n_points; j++)
+          // Simple way to have two variables
+          avgspec[j] += spec[j];
+        total++;
+      }
+      for (Int_t j = 0; j < n_points; j++)
+        spec[j] = avgspec[j]/TComplex(total,0);
+      cout << "\n";
     }
 
     void averageWaveform(Int_t maxevent = 0, string selection = "", Double_t filter =  0){
@@ -1066,6 +1132,25 @@ class ANALYZER{
       if(_filtered == nullptr) _filtered = ch[kch]->wvf;
       for (Int_t i = 0; i < n_points; i++) {
         _filtered[i] = _filtered[i]*factor;
+      }
+    }
+
+    void rollWvf(Double_t roll, Double_t *_filtered = nullptr){
+      if(_filtered == nullptr) _filtered = ch[kch]->wvf;
+      Int_t shift = roll/dtime;
+      // Handle cases where shift is greater than the array size
+      shift = shift % n_points;  // Normalize shift
+      if (shift < 0) shift += n_points;  // Handle negative shifts
+
+      // Copy original array to auxvec
+      for (int i = 0; i < n_points; ++i) {
+        auxvec[i] = _filtered[i];
+      }
+
+      // Shift the values in v by copying from auxvec
+      for (int i = 0; i < n_points; ++i) {
+        int new_index = (i + shift) % n_points;  // Wrap around with modulo
+        _filtered[i] = auxvec[new_index];
       }
     }
 
@@ -1450,5 +1535,5 @@ class ANALYZER{
 
 };
 
-
-
+template void ANALYZER::getWaveFromHistogram<TH1D>(TH1D *htemp);
+template void ANALYZER::getWaveFromHistogram<TH1F>(TH1F *htemp);
