@@ -521,8 +521,7 @@ class ANALYZER{
       }
     }
 
-    template<typename T>
-    void getWaveFromHistogram(T *htemp){
+    void getWaveFromHistogram(TH1 *htemp){
       if (htemp->GetNbinsX() != n_points){
         cout << "Not same amount of samples! Graph has " << htemp->GetNbinsX() << endl;
         return;
@@ -1534,6 +1533,3 @@ class ANALYZER{
     }
 
 };
-
-template void ANALYZER::getWaveFromHistogram<TH1D>(TH1D *htemp);
-template void ANALYZER::getWaveFromHistogram<TH1F>(TH1F *htemp);
