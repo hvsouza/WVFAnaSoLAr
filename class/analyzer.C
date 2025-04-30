@@ -521,7 +521,35 @@ class ANALYZER{
       }
     }
 
-    void getWaveFromHistogram(TH1 *htemp){
+    void saveWaveformAsGraph(string path_and_name = ""){
+      string foutname = path_and_name;
+      if ( foutname == ""){
+        foutname = Form("wvf_Ch%d.root", channels[kch]);
+      }
+      TFile *fout = new TFile(foutname.c_str(), "RECREATE");
+      TGraph *gout = new TGraph(n_points, time, ch[kch]->wvf);
+      gout->SetNameTitle("wvf","wvf");
+      fout->WriteTObject(gout, "wvf");
+      delete fout;
+      delete gout;
+    }
+
+    void saveWaveformAsTxT(string path_and_name = ""){
+      ofstream fout;
+      string foutname = path_and_name;
+      if ( foutname == ""){
+        foutname = Form("wvf_Ch%d.txt", channels[kch]);
+      }
+
+      fout.open(foutname.c_str(), ios::out);
+      for (Int_t i = 0; i < n_points; i++){
+        fout << ch[kch]->wvf[i] << endl;
+      }
+      fout.close();
+    }
+
+    template<typename T>
+    void getWaveFromHistogram(T *htemp){
       if (htemp->GetNbinsX() != n_points){
         cout << "Not same amount of samples! Graph has " << htemp->GetNbinsX() << endl;
         return;
