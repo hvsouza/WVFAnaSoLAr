@@ -65,6 +65,10 @@
 // // #define DUNESTYLE_ENABLE_AUTOMATICALLY 0
 // // dunestyle::SetDuneStyle();
 
+#ifndef decolength
+#define decolength 998
+#endif
+
 using namespace std;
 
 #include "denoiser.C"

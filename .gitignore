@@ -1,1 +1,5 @@
 class/load_ana_class.sh
+
+*.so
+*.d
+*.pcm

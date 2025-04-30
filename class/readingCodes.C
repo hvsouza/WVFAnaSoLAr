@@ -19,25 +19,31 @@ class Read{
     ULong64_t m_taim_ns = 0;
     ULong64_t m_tslppsm_ns = 0;
     TH1S *m_h = nullptr;
+    Short_t *decowfm = nullptr;
+    UInt_t decostatus = 0;
 
     string fmapname;
     UInt_t m_totalevents = 0;
+
+    const Double_t scale_f2s = std::numeric_limits<Short_t>::max() / 50.0;
+
   public:
 
 
 
     Int_t n_points;
 
-    Double_t dtime = 16; // steps (ADC's MS/s, 500 MS/s = 2 ns steps)
-    Int_t nbits = 16;
-    Int_t basebits = nbits;
-    Bool_t saveFilter       = false;
+    Double_t dtime    = 16; // steps (ADC's MS/s, 500 MS/s = 2 ns steps)
+    Int_t nbits       = 16;
+    Int_t basebits    = nbits;
+    Bool_t saveFilter = false;
+    Bool_t rawAna     = true;
 
-    Double_t startCharge = 3300;
-    Double_t maxRange = 5000;
-    Double_t fast = 500;
-    Double_t slow = 17000;
-    Double_t filter = 9;
+    Double_t startCharge        = 3300;
+    Double_t maxRange           = 5000;
+    Double_t fast               = 500;
+    Double_t slow               = 17000;
+    Double_t filter             = 9;
     Double_t exclusion_baseline = 30;
     map<UInt_t, Double_t> map_exclusion_threshold_baselines = {{0,0}};
     Double_t exclusion_window = 500;
@@ -47,15 +53,15 @@ class Read{
     UInt_t stopEvent = 2000;
     bool stopEventPerRootFile = true;
 
-    Double_t baselineTime = 10000; // time limit to start looking for baseline
-    Double_t baselineStart = 0;
-    Double_t chargeTime = 18000; // last time to integrate
-    Bool_t noBaseline=false;
+    Double_t baselineTime     = 10000; // time limit to start looking for baseline
+    Double_t baselineStart    = 0;
+    Double_t chargeTime       = 18000; // last time to integrate
+    Bool_t noBaseline         = false;
     Double_t baselineFraction = 1/3.;
 
     Double_t nbinsbase = TMath::Power(2,basebits);
-    Double_t minbase = -TMath::Power(2, basebits-1);
-    Double_t maxbase =  TMath::Power(2,basebits-1);
+    Double_t minbase   = -TMath::Power(2, basebits-1);
+    Double_t maxbase   = TMath::Power(2,basebits-1);
 
 
     string standard_log_file = "fileslog.log";
@@ -131,7 +137,11 @@ class Read{
         if (ftmp->IsZombie())
           continue;
         std::map<vector<uint>, uint> chmap_from_root; 
-        TTree *ttmp = (TTree*)ftmp->Get("rwf");
+        TTree *ttmp = nullptr;
+        if (rawAna)
+          ttmp = (TTree*)ftmp->Get("rwf");
+        else
+          ttmp = (TTree*)ftmp->Get("decowave");
         nrootfiles+=1;
         TBranch *bevent = ttmp->GetBranch("event");
         TBranch *bsn = ttmp->GetBranch("sn");
@@ -343,14 +353,22 @@ class Read{
         bcho[i] = t1->GetBranch(Form("Ch%d.",i));
         bcho[i]->SetAddress(&ch[i]);
       }
-      TTree *trwf = (TTree*)fin->Get("rwf");
+      TTree *trwf = nullptr;
+      if (rawAna)
+        trwf = (TTree*)fin->Get("rwf");
+      else
+        trwf = (TTree*)fin->Get("decowave");
+        
       TBranch *bevent = trwf->GetBranch("event");
       TBranch *bsn = trwf->GetBranch("sn");
       TBranch *bch = trwf->GetBranch("ch");
       // TBranch *bntpm_ms = trwf->GetBranch("ntpm_ms");
       // TBranch *btaim_ns = trwf->GetBranch("taim_ns");
       // TBranch *btslppsm_ns = trwf->GetBranch("tslppsm_ns");
-      TBranch *bth1s_ptr = trwf->GetBranch("th1s_ptr");
+      TBranch *bth1s_ptr = nullptr;
+      TBranch *bdeco = nullptr;
+      TBranch *bdecostatus = nullptr;
+
 
       bevent->SetAddress(&m_event);
       bsn->SetAddress(&m_sn);
@@ -358,7 +376,19 @@ class Read{
       // bntpm_ms->SetAddress(&m_ntpm_ms);
       // btaim_ns->SetAddress(&m_taim_ns);
       // btslppsm_ns->SetAddress(&m_tslppsm_ns);
-      bth1s_ptr->SetAddress(&m_h);
+
+      if (rawAna)
+      {
+        trwf->GetBranch("th1s_ptr");
+        bth1s_ptr->SetAddress(&m_h);
+      }
+      else
+      {
+        bdeco = trwf->GetBranch("decwfm");
+        bdeco->SetAddress(decowfm);
+        bdecostatus = trwf->GetBranch("rwf_status");
+        bdecostatus->SetAddress(&decostatus);
+      }
 
       auto nentries = trwf->GetEntries();
 
@@ -391,10 +421,20 @@ class Read{
         if (channels_to_get_map.count(board_ch)>0)
         {
           uint thechannel = chmap[board_ch];
-          bth1s_ptr->GetEntry(i);
           ch[thechannel]->event = tEvent;
           ch[thechannel]->board = m_sn;
-          getvalues(thechannel, *ch[thechannel], m_h);
+          if (rawAna)
+          {
+            bth1s_ptr->GetEntry(i);
+            getvalues(thechannel, *ch[thechannel], m_h);
+          }
+          else
+          {
+            bdeco->GetEntry(i);
+            bdecostatus->GetEntry(i);
+            ch[thechannel]->selection = decostatus; 
+            getvalues(thechannel, *ch[thechannel], decowfm);
+          }
           bcho[thechannel]->Fill();
         }
 
@@ -412,13 +452,29 @@ class Read{
     void getvalues(uint nch, ADC_DATA &ch, TH1S *htmp){
       Int_t n_points = htmp->GetNbinsX();
       ch.Set_npts(n_points);
-      vector<Double_t> raw(n_points);
       vector<Double_t> filtered(n_points);
       for (Int_t i = 0; i < n_points; i++){
         // In this case, bin content is with i
         ch.wvf[i] = (htmp->GetBinContent(i) - offset)*polarity;
         filtered[i] = ch.wvf[i];
       }
+      processvalues(nch, ch, n_points, filtered);
+    }
+
+    void getvalues(uint nch, ADC_DATA &ch, Short_t *decwfm){
+      Int_t n_points = decolength;
+      ch.Set_npts(n_points);
+      vector<Double_t> filtered(n_points);
+      for (Int_t i = 0; i < n_points; i++){
+        // In this case, bin content is with i
+        ch.wvf[i] = decwfm[i]/scale_f2s;
+        filtered[i] = ch.wvf[i];
+      }
+      processvalues(nch, ch, n_points, filtered);
+    }
+
+    void processvalues(uint nch, ADC_DATA&ch, Int_t n_points, vector<Double_t> &filtered)
+    {
       if(filter>0) dn.TV1D_denoise<Double_t>(&ch.wvf[0],&filtered[0],n_points,filter);
       Double_t bl = baseline(&filtered[0],ch.selection, map_exclusion_threshold_baselines[nch]);
 
@@ -508,7 +564,9 @@ class Read{
       }
     }
 
-
+    Read(){
+      decowfm = new Short_t[decolength];
+    }
 };
 
 

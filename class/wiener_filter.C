@@ -172,7 +172,7 @@ class WIENER{
       // cutoff_frequency is the cutoff frequency in MHz (or your unit set)
       if (filter_type == "gaus")
       {
-        cutoff_frequency = sqrt(sqrt(2))*cutoff_frequency;
+        cutoff_frequency = cutoff_frequency/sqrt(log(2.0));
         f_filter = new TF1("filter","TMath::Gaus(x,[0],[1])",0,frequency);	// A gaussian filter
         // the standard deviation must be sqrt(sqrt(2))* the cutoff frequen, so when x = cutoff frequency Vo/Vi = 0.7
         f_filter->SetParameters(0,cutoff_frequency);
@@ -304,9 +304,11 @@ class WIENER{
 
       Double_t gaus_blur = 1;
       for(Int_t k=0; k<npts/2+1; k++){
-        if(cutoff_frequency!=0) gaus_blur = f_filter->Eval(convert_freq*k);
+        // if(cutoff_frequency!=0) gaus_blur = TComplex(f_filter->Eval(convert_freq*k),0);
+        if(cutoff_frequency!=0) gaus_blur = TComplex::Exp(-0.5*pow((convert_freq*k)/(cutoff_frequency/sqrt(log(2.0))),2));
         if(!(h.spec[k].Re()==0 && h.spec[k].Im()== 0)){
           spec[k] = y.spec[k]*gaus_blur/h.spec[k];
+          spec[k] = spec[k]*factor; // Because it was canceled in the division
         }
         else{
           spec[k] = 0;
@@ -332,7 +334,7 @@ class WIENER{
 
       for(Int_t i = 0; i<npts; i++){
         res[i] = hfinal->GetBinContent(i+1);
-        hwvf->SetBinContent(i+1,res[i]);
+        hwvf->SetBinContent(i+1,res[i]/2);
       }
 
       shift_waveform(hwvf, h.maxBin, true);
@@ -360,35 +362,28 @@ class WIENER{
     }
 
 
-
-
-
-
-
     template <class T>
-    void shift_waveform(T *h, Int_t new_max, Bool_t rawShift = false){
+    void shift_waveform(T *h, Int_t new_max_or_shift, Bool_t rawShift = false){
       Int_t old_max = h->GetMaximumBin();
-      if(rawShift) old_max = 0;
-      Int_t old_ref = old_max - new_max;
-      TH1D *htemp = (TH1D*)h->Clone("htemp");
-      Double_t temp;
-      if(old_ref<0){
-        // cout << " case lower" << endl;
-        old_ref = npts-(new_max-old_max);
-      }
-      for(Int_t i = 1; i<npts-(old_ref); i++){
-        temp = htemp->GetBinContent(old_ref+i);
-        h->SetBinContent(i,temp);
-      }
-      Int_t aux = 1;
-      for(Int_t i = npts-(old_ref); i<=npts; i++){
-        temp = htemp->GetBinContent(aux);
-        h->SetBinContent(i,temp);
-        aux++;
-      }
-      delete htemp;
-    }
+      Int_t shift = new_max_or_shift - old_max;
+      if (shift < 0) shift = npts + shift;
 
+      if(rawShift) shift = new_max_or_shift;
+
+      vector<double> vtemp(npts);
+      for(Int_t i = 0; i<npts; i++){
+        vtemp[i] = h->GetBinContent(i+1);
+      }
+      // Normalize shift to always be within valid range
+      shift = ((shift % npts) + npts) % npts;
+      if (shift>0){
+        std::rotate(vtemp.begin(), vtemp.end() - shift, vtemp.end());
+      }
+
+      for (Int_t i = 0; i < npts; i++) {
+        h->SetBinContent(i+1, vtemp[i]);
+      }
+    }
 
 
     void idx_recompt(Int_t k){
