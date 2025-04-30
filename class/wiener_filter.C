@@ -232,14 +232,16 @@ class WIENER{
       flar->SetParName(2,"A_{S}");
       flar->SetParName(3,"#tau_{S}");
 
-      flar_gaus = new TF1("flar_gaus","([0]*exp(-(x-[5])/[1])*exp([4]*[4]/(2*[1]*[1])))*TMath::Erfc((([5]-x)/[4]+[4]/[1])/TMath::Power(2,0.5))/2. + ([2]*exp(-(x-[5])/[3])*exp([4]*[4]/(2*[3]*[3])))*TMath::Erfc((([5]-x)/[4]+[4]/[3])/TMath::Power(2,0.5))/2.",0,npts*step);
-      flar_gaus->SetParameters(100,10,3,1400,20,maxBin*step);
-      flar_gaus->SetParName(0,"A_{F}");
+      // flar_gaus = new TF1("flar_gaus","([0]*exp(-(x-[5])/[1])*exp([4]*[4]/(2*[1]*[1])))*TMath::Erfc((([5]-x)/[4]+[4]/[1])/TMath::Power(2,0.5))/2. + ([2]*exp(-(x-[5])/[3])*exp([4]*[4]/(2*[3]*[3])))*TMath::Erfc((([5]-x)/[4]+[4]/[3])/TMath::Power(2,0.5))/2.",0,npts*step);
+      flar_gaus = new TF1("flar_gaus","[0]*(  (([2]/[1])*exp(-(x-[5])/[1])*exp([4]*[4]/(2*[1]*[1])))*TMath::Erfc((([5]-x)/[4]+[4]/[1])/TMath::Power(2,0.5))/2. + ((1-[2])/[3])*(exp(-(x-[5])/[3])*exp([4]*[4]/(2*[3]*[3])))*TMath::Erfc((([5]-x)/[4]+[4]/[3])/TMath::Power(2,0.5))/2. )",0,npts*step);
+      flar_gaus->SetParameters(1e5,10,0.3,1400,20,maxBin*step);
+      flar_gaus->SetParName(0,"A");
       flar_gaus->SetParName(1,"#tau_{F}");
-      flar_gaus->SetParName(2,"A_{S}");
+      flar_gaus->SetParName(2,"A_{p}");
       flar_gaus->SetParName(3,"#tau_{S}");
       flar_gaus->SetParName(4,"#sigma");
       flar_gaus->SetParName(5,"t_{0}");
+      flar_gaus->SetParLimits(2, 0, 1);
     }
     void frequency_deconv(WIENER y, WIENER G, Double_t cutoff_frequency=0, string filter_type = "gaus"){
 
@@ -313,7 +315,7 @@ class WIENER{
         else{
           spec[k] = 0;
         }
-      
+
         spec_re[k] = spec[k].Re();
         spec_im[k] = spec[k].Im();
 
@@ -358,7 +360,7 @@ class WIENER{
       maxBin = y.maxBin;
       set_flar();
       delete hfinal;
-   
+
     }
 
 
