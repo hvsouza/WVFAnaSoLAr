@@ -45,7 +45,44 @@ class  MyFunctionFree{
 };
 
 
+class  MyFunctionFreeAfter{
+  public:
 
+    Int_t n_peaks;
+    // use constructor to customize your function object
+    Double_t operator()(Double_t *x, Double_t *par) {
+      Double_t f;
+      Double_t xx = x[0];
+      f  = abs(par[0])*exp(-0.5*TMath::Power((xx-par[1])/par[2],2)); // first argument
+
+      f = f+abs(par[3])*exp(-0.5*TMath::Power((xx-par[4])/par[5],2));
+
+      f = f+abs(par[6])*exp(-0.5*TMath::Power((xx-par[7])/par[8],2));
+      Int_t j = 1;
+      for(Int_t i = 1; i<n_peaks; i++, j+=2){
+        f = f+ abs(par[j+8])*exp(-0.5*TMath::Power((xx-(par[4]+(i+1)*(par[7]-par[4])))/par[j+8+1],2));
+      }
+      j-=2;
+      Int_t lastpar = j+8+1;
+      Double_t tauafter = abs(par[lastpar+1]);
+      Double_t sigmaafter = abs(par[lastpar+2]);
+      lastpar+=2;
+      // Add exponential tail for first peak
+      f = f + (abs(par[lastpar+1]*par[3])*exp(-(xx-par[4])/tauafter)*exp(sigmaafter*sigmaafter/(2*tauafter*tauafter)))*TMath::Erfc(((par[4]-xx)/sigmaafter+sigmaafter/tauafter)/TMath::Power(2,0.5))/2.;
+      // Add exponential tail for second peak
+      lastpar+=1;
+      f = f + (abs(par[lastpar+1]*par[6])*exp(-(xx-par[7])/tauafter)*exp(sigmaafter*sigmaafter/(2*tauafter*tauafter)))*TMath::Erfc(((par[7]-xx)/sigmaafter+sigmaafter/tauafter)/TMath::Power(2,0.5))/2.;
+      lastpar+=1; 
+
+      j=1;
+      for(Int_t i = 1; i<n_peaks; i++, j+=2){
+        Double_t t0 = (par[4]+(i+1)*(par[7]-par[4]));
+        f = f + (abs(par[lastpar+1]*par[j+8])*exp(-(xx-t0)/tauafter)*exp(sigmaafter*sigmaafter/(2*tauafter*tauafter)))*TMath::Erfc(((t0-xx)/sigmaafter+sigmaafter/tauafter)/TMath::Power(2,0.5))/2.;
+        lastpar+=1;
+      }
+      return f;
+    }
+};
 
 
 
@@ -82,11 +119,7 @@ class Calibration
 
 {
     
-    
-    
   public:
-    
-
 
     string myname = "c";
     Double_t dtime = 4; // steps (ADC's MS/s, 500 MS/s = 2 ns steps)
@@ -106,6 +139,7 @@ class Calibration
     // _______________ Parameters for fit_sphe_wave _______________/
   
     string rootFile = "";
+    string histogramname = "analyzed";
   
     Int_t n_peaks = 7;
     Double_t peak0 = 0.1;
@@ -119,6 +153,7 @@ class Calibration
     Double_t startpoint = 0.001;
     Double_t poisson_ratio = 3.;
     Double_t lambda = 0;
+    Double_t searchThreshold = 2;
     TF1 *faux = nullptr;
   
     Double_t xmin = -10000;
@@ -175,6 +210,10 @@ class Calibration
     // 3 first lastOne fit wiht fix parameters
 
     Int_t debug_level = 0;
+    TCanvas *coutput = nullptr;
+    Double_t gain = 0;
+
+    bool doAfterPulses = true;
     // ____________________________________________________________________________________________________ //
     void fit_sphe_wave(string name, bool optimize = true){
 
@@ -202,7 +241,7 @@ class Calibration
       if (rootFile != "") {
         f1 = new TFile(rootFile.c_str(),"READ");
         h = (TH1D*)f1->Get(histogram.c_str());
-        if(!h) h = (TH1D*)f1->Get("analyzed");
+        if(!h) h = (TH1D*)f1->Get(histogram.c_str());
         for (auto fkey: *f1->GetListOfKeys()){
           if (string(fkey->GetName()) == "head")
           {
@@ -245,7 +284,7 @@ class Calibration
 
       Double_t sigmastep = 0.2;
       while(nfound < 3 && sigmaSearch>=1){
-        nfound = s->SearchHighRes(source, destVector, nbins, sigmaSearch, 2, kFALSE, 5, kTRUE, 3);
+        nfound = s->SearchHighRes(source, destVector, nbins, sigmaSearch, searchThreshold, kFALSE, 5, kTRUE, 3);
         sigmaSearch-=sigmastep;
       }
       if(nfound < 3){
@@ -424,12 +463,11 @@ class Calibration
     // ____________________________________________________________________________________________________ //
     void makeSphe(string histogram){
 
-      string histogram_tempo = histogram+"_stat";
       TFile *f1 = nullptr;
       if (rootFile != "") {
         TFile *f1 = new TFile(rootFile.c_str(),"READ");
         hcharge = (TH1D*)f1->Get(histogram.c_str());
-        if(!hcharge) hcharge = (TH1D*)f1->Get("analyzed");
+        if(!hcharge) hcharge = (TH1D*)f1->Get(histogram.c_str());
       }
       else{
         hcharge = (TH1D*)htemp->Clone("");
@@ -462,10 +500,15 @@ class Calibration
       //First function, will almost fit freely
       TF1 *func = new TF1("func",startingPump().c_str(),xmin,xmax);
       TF1 *fu[2+n_peaks];
+      TF1 *fuafter[1+n_peaks];
       string funame;
       for(Int_t i = 0; i<(2+n_peaks); i++){
         funame = "fu_"+to_string(i);
         fu[i] = new TF1(funame.c_str(),"gaus(0)",xmin,xmax);
+      }
+      for(Int_t i = 0; i<(1+n_peaks); i++){
+        funame = "fuafter_"+to_string(i);
+        fuafter[i] = new TF1(funame.c_str(),"(abs([0])*exp(-(x-[2])/[1])*exp([3]*[3]/(2*[1]*[1])))*TMath::Erfc((([2]-x)/[3]+[3]/[1])/TMath::Power(2,0.5))/2.",xmin,xmax);
       }
     
       Double_t peaks[n_peaks];
@@ -510,6 +553,7 @@ class Calibration
     
       Double_t scale = 1/(hcharge->Integral());
       //hcharge->Scale(scale);
+      if (!show_all_parameters) hcharge->SetStats(kFALSE);
       hcharge->Draw("hist");
       // hcharge->Fit("func","R0Q");
 
@@ -608,6 +652,7 @@ class Calibration
       }
       if(!quitemode) cout << "Fit status before free std dev: " << fit_status << endl;
 
+      Double_t diff2to1SPE = (lastOne->GetParameter(7)-lastOne->GetParameter(4));
       if(make_free_stddevs == false){
         fu[0]->SetParameter(0,abs(lastOne->GetParameter(0)));
         fu[0]->SetParameter(1,lastOne->GetParameter(1));
@@ -623,7 +668,7 @@ class Calibration
     
         for(Int_t i = 1; i<n_peaks; i++){
           fu[i+2]->SetParameter(0,abs(lastOne->GetParameter(i+7)));
-          fu[i+2]->SetParameter(1,(lastOne->GetParameter(4) + (i+1)*(lastOne->GetParameter(7)-lastOne->GetParameter(4))));
+          fu[i+2]->SetParameter(1,(lastOne->GetParameter(4) + (i+1)*diff2to1SPE));
           fu[i+2]->SetParameter(2,(TMath::Power((i+2),0.5)*lastOne->GetParameter(5)));
         }
       }
@@ -641,6 +686,18 @@ class Calibration
       MyFuncFree.n_peaks = n_peaks;
 
       TF1 *lastOneFree = new TF1("lastOneFree",MyFuncFree,xmin,xmax,7+n_peaks*2);
+
+      MyFunctionFreeAfter MyFuncFreeAfter;
+      MyFuncFreeAfter.n_peaks = n_peaks;
+
+      Int_t nparams_after = 7+2+1+n_peaks*2+n_peaks; // 7 (2+1* gaus) + 2 (after taus + 1 sigma tau) + 1 after + 2*n_peaks (gaus) + n_peaks (A after)
+      TF1 *lastOneFreeAfter = new TF1("lastOneFreeAfter",MyFuncFreeAfter,xmin,xmax,nparams_after);
+      Double_t sigmaafter=0;
+      Double_t errsigmaafter=0;
+      Double_t tauafter=0;
+      Double_t errtauafter=0;
+
+      TF1 *actualLast = nullptr;
 
       if(make_free_stddevs == true){
         setParametersFree(lastOneFree,lastOne);
@@ -664,43 +721,134 @@ class Calibration
         // cout << lastGausUpperLim << endl;
 
         string lastOneFitFreeOpt = "RQ0S";
-        if (!quitemode) lastOneFitFreeOpt = "RS";
+        if (!quitemode && !doAfterPulses) lastOneFitFreeOpt = "R";
         hcharge->Fit("lastOneFree",lastOneFitFreeOpt.c_str());
-        chi2 = lastOneFree->GetChisquare();
-        ndf = lastOneFree->GetNDF();
+        setParametersFree(lastOneFreeAfter,lastOneFree);
+
+        Double_t diff2to1SPE = (lastOneFreeAfter->GetParameter(7)-lastOneFreeAfter->GetParameter(4));
+
+        lastOneFreeAfter->SetParameter(7+n_peaks*2, diff2to1SPE);
+        lastOneFreeAfter->SetParLimits(7+n_peaks*2, 0.05*diff2to1SPE, 2*diff2to1SPE);
+        lastOneFreeAfter->SetParName(7+n_peaks*2, "tau_after");
+
+        lastOneFreeAfter->SetParameter(7+n_peaks*2+1, 3*lastOneFreeAfter->GetParameter(5));
+        lastOneFreeAfter->SetParLimits(7+n_peaks*2+1, 0, 5*lastOneFreeAfter->GetParameter(5));
+        lastOneFreeAfter->SetParName(7+n_peaks*2+1,"sigma_after");
+          // lastOneFreeAfter->SetParLimits(i+1, 0, abs(lastOneFreeAfter->GetParameter(2)));
+        // lastOneFreeAfter->SetParameter(7+n_peaks*2+2, lastOneFreeAfter->GetParameter(3));
+        // lastOneFreeAfter->SetParName(7+n_peaks*2+2,"At_{1}");
+        // lastOneFreeAfter->SetParameter(7+n_peaks*2+3, lastOneFreeAfter->GetParameter(6));
+        // lastOneFreeAfter->SetParName(7+n_peaks*2+3,"At_{1}");
+
+        // Int_t aux_amplitude = 9;
+        // for(Int_t i = 7+n_peaks*2+4, auxi=3 ; i < nparams_after; i+=1, auxi+=1){
+        //   Double_t refamplitude = 0;
+        //   refamplitude = abs(lastOneFreeAfter->GetParameter(aux_amplitude));
+        //   aux_amplitude+=2;
+        //   lastOneFreeAfter->SetParameter(i, 0.5*refamplitude);
+        //   lastOneFreeAfter->SetParLimits(i, 0.1*refamplitude, refamplitude);
+        //   lastOneFreeAfter->SetParName(i,Form("At_{%d}",auxi));
+        // }
+        for(Int_t i = 7+n_peaks*2+2, auxi=0 ; i < nparams_after; i+=1, auxi+=1){
+          lastOneFreeAfter->SetParameter(i, 0.5);
+          lastOneFreeAfter->SetParLimits(i, 0.01, 1);
+          lastOneFreeAfter->SetParName(i,Form("At_{%d}",auxi));
+        }
+
+        if (doAfterPulses)
+        {
+          if (!quitemode)
+            lastOneFitFreeOpt = "RS";
+          hcharge->Fit("lastOneFreeAfter",lastOneFitFreeOpt.c_str());
+          hcharge->Fit("lastOneFreeAfter",lastOneFitFreeOpt.c_str());
+          actualLast = new TF1("actualLast",MyFuncFreeAfter,xmin,xmax,nparams_after);
+          for (Int_t i = 0; i < lastOneFreeAfter->GetNpar(); i++){
+            actualLast->SetParameter(i,lastOneFreeAfter->GetParameter(i));
+            actualLast->SetParName(i,lastOneFreeAfter->GetParName(i));
+            actualLast->SetParError(i,lastOneFreeAfter->GetParError(i));
+          }
+          actualLast->SetChisquare(lastOneFreeAfter->GetChisquare());
+          actualLast->SetNDF(lastOneFreeAfter->GetNDF());
+        }
+        else{
+          actualLast = new TF1("actualLast",MyFuncFree,xmin,xmax,7+n_peaks*2);
+          for (Int_t i = 0; i < lastOneFree->GetNpar(); i++){
+            actualLast->SetParameter(i,lastOneFree->GetParameter(i));
+            actualLast->SetParName(i,lastOneFree->GetParName(i));
+            actualLast->SetParError(i,lastOneFree->GetParError(i));
+          }
+          actualLast->SetChisquare(lastOneFree->GetChisquare());
+          actualLast->SetNDF(lastOneFree->GetNDF());
+        }
+
+        chi2 = actualLast->GetChisquare();
+        ndf = actualLast->GetNDF();
         fit_status = TestFitSuccess();
         if(!quitemode) cout << "Fit status with free std dev: " << fit_status << endl;
 
+        fu[0]->SetParameter(0,abs(actualLast->GetParameter(0)));
+        fu[0]->SetParameter(1,actualLast->GetParameter(1));
+        fu[0]->SetParameter(2,actualLast->GetParameter(2));
 
-        fu[0]->SetParameter(0,abs(lastOneFree->GetParameter(0)));
-        fu[0]->SetParameter(1,lastOneFree->GetParameter(1));
-        fu[0]->SetParameter(2,lastOneFree->GetParameter(2));
+        fu[1]->SetParameter(0,abs(actualLast->GetParameter(3)));
+        fu[1]->SetParameter(1,actualLast->GetParameter(4));
+        fu[1]->SetParameter(2,actualLast->GetParameter(5));
 
-        fu[1]->SetParameter(0,abs(lastOneFree->GetParameter(3)));
-        fu[1]->SetParameter(1,lastOneFree->GetParameter(4));
-        fu[1]->SetParameter(2,lastOneFree->GetParameter(5));
-
-        fu[2]->SetParameter(0,abs(lastOneFree->GetParameter(6)));
-        fu[2]->SetParameter(1,lastOneFree->GetParameter(7));
-        fu[2]->SetParameter(2,lastOneFree->GetParameter(8));
-
-        for(Int_t i = 1, j = 1; i<n_peaks; i++){
-          fu[i+2]->SetParameter(0,abs(lastOneFree->GetParameter(j+8)));
-          fu[i+2]->SetParameter(1,(lastOneFree->GetParameter(4) + (i+1)*(lastOneFree->GetParameter(7)-lastOneFree->GetParameter(4))));
-          fu[i+2]->SetParameter(2,lastOneFree->GetParameter(j+1+8));
-          j+=2;
+        fu[2]->SetParameter(0,abs(actualLast->GetParameter(6)));
+        fu[2]->SetParameter(1,actualLast->GetParameter(7));
+        fu[2]->SetParameter(2,actualLast->GetParameter(8));
+        Int_t jj = 1;
+        for(Int_t i = 1; i<n_peaks; i++){
+          fu[i+2]->SetParameter(0,abs(actualLast->GetParameter(jj+8)));
+          Double_t meanNPE = (actualLast->GetParameter(4) + (i+1)*(actualLast->GetParameter(7)-actualLast->GetParameter(4)));
+          fu[i+2]->SetParameter(1,meanNPE);
+          fu[i+2]->SetParameter(2,actualLast->GetParameter(jj+1+8));
+          jj+=2;
         }
+        jj-=2;
+        Int_t lastpar = jj+8+1;
+        tauafter = actualLast->GetParameter(lastpar+1); 
+        errtauafter = abs(actualLast->GetParError(lastpar+1));
+        sigmaafter = abs(actualLast->GetParameter(lastpar+2));
+        errsigmaafter = abs(actualLast->GetParError(lastpar+2));
+        lastpar+=2;
+        
+        for(Int_t i = 0, aux=0; i<n_peaks+1; i++, aux+=2){
+          Double_t meanNPE = (actualLast->GetParameter(4) + (i)*(actualLast->GetParameter(7)-actualLast->GetParameter(4)));
+          if (i < 2){
+            meanNPE = actualLast->GetParameter(4+i*3);
+          }
+          Int_t idxamplitude = 0;
+          if (i < 2){
+            aux = -2;
+            idxamplitude = 3+i*3;
+          }
+          else{
+            idxamplitude = 3 + 3 + 3 + aux; 
+          }
+
+          if (doAfterPulses)
+          {
+            fuafter[i]->SetParameter(0,abs(actualLast->GetParameter(lastpar+i+1)*actualLast->GetParameter(idxamplitude)));
+            fuafter[i]->SetParameter(1,tauafter);
+            fuafter[i]->SetParameter(2,meanNPE);
+            fuafter[i]->SetParameter(3,sigmaafter);
+          }
+        }
+
 
       }
       else{
-        chi2 = lastOneFree->GetChisquare();
-        ndf = lastOneFree->GetNDF();
+        chi2 = actualLast->GetChisquare();
+        ndf = actualLast->GetNDF();
         fit_status = TestFitSuccess();
       }
 
 
       lastOne->SetNpx(1000);
+      actualLast->SetNpx(1000);
       lastOneFree->SetNpx(1000);
+      lastOneFreeAfter->SetNpx(1000);
 
       hcharge->Draw("hist");
       
@@ -711,21 +859,41 @@ class Calibration
       // hcharge->StatOverflows(kTRUE);
       hcharge->ClearUnderflowAndOverflow();
       lastOne->SetRange(xmin,xmax);
-      lastOneFree->SetRange(xmin,xmax);
+      actualLast->SetRange(xmin,xmax);
 
 
       for(Int_t i = 0; i<(2+n_peaks); i++){
         fu[i]->SetLineColor(kGray+1);
         fu[i]->SetNpx(1000);
         fu[i]->Draw("SAME");
+
+      }
+      if (doAfterPulses)
+      {
+        for(Int_t i = 0; i<(1+n_peaks); i++){
+          fuafter[i]->SetLineColor(kGreen+2);
+          fuafter[i]->SetNpx(1000);
+          fuafter[i]->SetLineStyle(2);
+          fuafter[i]->Draw("SAME");
+        }
       }
       if(make_free_stddevs==false) lastOne->Draw("LP SAME");
       else {
-        lastOneFree->Draw("LP SAME");
-        lastOne = (TF1*)lastOneFree->Clone("lastOneShow");
+        if (!doAfterPulses)
+          lastOneFree->Draw("LP SAME");
+        else
+          lastOneFreeAfter->Draw("LP SAME");
+        delete lastOne;
+        lastOne = actualLast;
       }
       snr = abs((lastOne->GetParameter(4))/lastOne->GetParameter(2));
 
+      Double_t _mu1 = abs(lastOne->GetParameter(4))*normfactor;
+      Double_t _mu2 = abs(lastOne->GetParameter(7))*normfactor;
+      Double_t _mu21 = _mu2-_mu1;
+      Double_t _sigma1 = abs(lastOne->GetParameter(5))*normfactor;
+      Double_t _b = abs(lastOne->GetParameter(1))*normfactor;
+      Double_t _sigmab = abs(lastOne->GetParameter(2))*normfactor;
       if (!quitemode){
         cout << "1th peak = " << lastOne->GetParameter(4) << endl;
         cout << "2th peak = " << lastOne->GetParameter(7) << endl;
@@ -738,17 +906,12 @@ class Calibration
         if (out.tellp() == 0) {
           out << "# mu1 mu2 m2-m1 sigma1 b sigmab" << endl;
         }
-        Double_t _mu1 = abs(lastOne->GetParameter(4))*normfactor;
-        Double_t _mu2 = abs(lastOne->GetParameter(7))*normfactor;
-        Double_t _mu21 = _mu2-_mu1;
-        Double_t _sigma1 = abs(lastOne->GetParameter(5))*normfactor;
-        Double_t _b = abs(lastOne->GetParameter(1))*normfactor;
-        Double_t _sigmab = abs(lastOne->GetParameter(2))*normfactor;
         out <<  _mu1  << " " << _mu2 << " " << _mu21 << " "
             << _sigma1 << " " << _b << " " << _sigmab << " ";
 
         out << std::fixed << std::setprecision(2) << snr << endl;
       }
+      this->gain = _mu21;
 
       // ____________________________ Finish of sphe fit ____________________________ //
 
@@ -956,6 +1119,11 @@ class Calibration
       ltext = pleg->AddText(Form("%s: %.2f #pm %.2f",lastOne->GetParName(7),abs(lastOne->GetParameter(7)), lastOne->GetParError(7)));
       ltext = pleg->AddText(Form("%s: %.2f #pm %.2f",lastOne->GetParName(8),abs(lastOne->GetParameter(8)), lastOne->GetParError(8)));
 
+      if (doAfterPulses){
+        ltext = pleg->AddText(Form("%s: %.2f #pm %.2f","#tau_{after}", tauafter, errtauafter));
+        ltext = pleg->AddText(Form("%s: %.2f #pm %.2f","#sigma_{after}", sigmaafter, errsigmaafter));
+      }
+
       // ((TText*)pleg->GetListOfLines()->Last())->SetTextAlign(23);
       pleg->Draw();
       // ____________________________ FinishDraw legend by hand ____________________________ //
@@ -968,6 +1136,8 @@ class Calibration
         delete c;
         if(rootFile=="") delete hcharge;
       }
+
+      coutput = c;
 
     }
 
@@ -1038,27 +1208,27 @@ class Calibration
       this->rebin = rebin;
       this->channel = ch;
       this->quitemode = quite;
-      string histogram;
+      string histogramname;
       if (hspe){
         this->rootFile = "";
-        histogram = hspe->GetName();
+        histogramname = hspe->GetName();
         this->htemp = hspe;
       }
       else{
-        histogram = "analyzed";
+        histogramname = this->histogramname;
         if(rootFile == "") this->rootFile = "sphe_histograms_Ch"+to_string(ch)+".root";
       }
 
       bool tmpfree = this->make_free_stddevs;
       this->make_free_stddevs = true; // starts with false, if good fitting, change to true
-      this->searchParameters(histogram.c_str(), deconv, true); // give a first search in the parameters.
+      this->searchParameters(histogramname.c_str(), deconv, true); // give a first search in the parameters.
       this->make_free_stddevs = tmpfree;
 
       this->deltaplus = 1;
       this->deltaminus = 0;
 
       // this->drawDebugLines = true;
-      this->fit_sphe_wave(histogram.c_str(),false); // set true to make if you want to execute "searchParameters" inside here instead
+      this->fit_sphe_wave(histogramname.c_str(),false); // set true to make if you want to execute "searchParameters" inside here instead
       vector<Double_t> ret = {static_cast<Double_t>(this->fit_status), this->snr, this->chi2, this->ndf};
       this->snr = ret[1];
       return ret;
@@ -1074,11 +1244,19 @@ class Calibration
       vector<Double_t> ref = {0,0,0,0};
       Double_t best_fit = 1e12;
       Double_t best_snr = 0;
+      bool novalidfit = true;
       for (Int_t rebin = minrebin; rebin <= maxrebin; rebin*=2){
         for(Double_t deconv = min_sigma; deconv <= max_sigma; deconv+=sigma_step){
           cout << "Trying rebin: " << rebin << " deconv: " << deconv << endl;
           vals = perform_fit(ch,rebin, deconv, true, h);
-          if (vals[0] > 0){
+          if (vals[0] > 0 || novalidfit){
+            if (vals[0] > 0){
+              if (novalidfit){
+                best_fit = 1e12;
+                best_snr = 0;
+              }
+              novalidfit = false;
+            }
             Double_t goodf = vals[2]/vals[3];
             if (goodf < best_fit){
               best_fit = goodf;
@@ -1090,7 +1268,6 @@ class Calibration
             }
           }
         }
-
       }
       cout << "...............: rebin deconv snr chi2/ndf" << endl;
       cout << "values_best_snr:" << " ";
@@ -1150,6 +1327,14 @@ class Calibration
     Calibration(string mname = "c"){
       myname = mname;
     }
+
+    ~Calibration() {
+      if (faux) { delete faux; faux = nullptr; }
+      if (htemp && htemp->GetDirectory() == nullptr) { delete htemp; htemp = nullptr; }
+      if (hcharge && hcharge->GetDirectory() == nullptr) { delete hcharge; hcharge = nullptr; }
+      if (thead && thead->GetDirectory() == nullptr) { delete thead; thead = nullptr; }
+    }
+
     
 };
 
