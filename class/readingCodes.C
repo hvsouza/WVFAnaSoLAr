@@ -379,7 +379,7 @@ class Read{
 
       if (rawAna)
       {
-        trwf->GetBranch("th1s_ptr");
+        bth1s_ptr = trwf->GetBranch("th1s_ptr");
         bth1s_ptr->SetAddress(&m_h);
       }
       else
